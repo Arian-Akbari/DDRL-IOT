@@ -9,13 +9,8 @@ from Config import Config
 from D3QN import DuelingDoubleDeepQNetwork
 from MEC_Env import MEC
 
-"""
 if not os.path.exists("models"):
     os.mkdir("models")
-else:
-    shutil.rmtree("models")
-    os.mkdir("models")
-"""
 
 
 def normalize(parameter, minimum, maximum):

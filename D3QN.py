@@ -11,7 +11,8 @@ tf.disable_v2_behavior()
 # Configure GPU memory growth to avoid allocating all GPU memory at once
 physical_devices = tf.config.experimental.list_physical_devices("GPU")
 if len(physical_devices) > 0:
-    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.experimental.set_memory_growth(physical_devices[0], False)
+    tf.config.experimental.set_memory_limit(physical_devices[0], 22000)
 
 
 class DuelingDoubleDeepQNetwork:
@@ -316,15 +317,20 @@ class DuelingDoubleDeepQNetwork:
             self.sess.run(self.replace_target_op)
             print("Network_parameter_updated\n")
 
+        # Check if we have enough memory for sampling (minimal fix for numpy error)
+        if self.memory_counter <= self.n_lstm_step:
+            return
+
         # randomly pick [batch_size] memory from memory np.hstack((s, [a, r], s_, lstm_s, lstm_s_))
         if self.memory_counter > self.memory_size:
-            sample_index = np.random.choice(
-                self.memory_size - self.n_lstm_step, size=self.batch_size
-            )
+            available_samples = self.memory_size - self.n_lstm_step
         else:
-            sample_index = np.random.choice(
-                self.memory_counter - self.n_lstm_step, size=self.batch_size
-            )
+            available_samples = self.memory_counter - self.n_lstm_step
+
+        if available_samples <= 0:
+            return
+
+        sample_index = np.random.choice(available_samples, size=self.batch_size)
         #  transition = np.hstack(s, [a, r], s_, lstm_s, lstm_s_)
         batch_memory = self.memory[
             sample_index, : self.n_features + 1 + 1 + self.n_features

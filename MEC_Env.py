@@ -633,7 +633,7 @@ class MEC:
                         # self.TASK_log[ue_index][self.edge_process_task[ue_index][edge_index]['TASK_ID']]['state'] = 2
 
                     # OTHER INFO
-                    if self.edge_ue_m[edge_index] != 0:
+                    if self.edge_ue_m[edge_index] != 0 and ue_arrive_task_dens > 0:
                         self.b_edge_comp[ue_index, edge_index] = np.max(
                             [
                                 self.b_edge_comp[ue_index, edge_index]
