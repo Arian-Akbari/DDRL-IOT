@@ -1,0 +1,193 @@
+# DDRL Integration Change Plan
+
+This document is a structured checklist to map your current DRL implementation to the DDRL requirements from the paper you shared. Once you upload your code, I’ll fill in the exact file paths and line-level changes under each section.
+
+---
+
+## 1) Quick Repo Audit (to be filled after code upload)
+
+* **Project tree**: `...`
+* **Env file(s)** (e.g., `env.py`, `environment/`, `sim/`): `...`
+* **Agent/model** (e.g., `agent.py`, `model.py`, `networks/`): `...`
+* **Replay buffer**: `...`
+* **Training loop** (e.g., `train.py`, `runner.py`): `...`
+* **Config/Hparams** (e.g., `config.yaml`, `args.py`): `...`
+* **Logging/metrics** (e.g., `logger.py`, `tb_writer.py`): `...`
+
+---
+
+## 2) Environment: MEC + IoT Dynamics
+
+**Files to modify**: (will specify after upload)
+
+**Add/ensure implementations for:**
+
+* **Entities & sets**: MEC servers $\mu$, RRHs $L$, IoT devices $M$, time slots $T$.
+* **Channel model**: per-slot channel power gain $g_{m,l}(t)$; noise $\sigma^2$; bandwidth split into $k$ orthogonal subchannels.
+* **Transmission rate**: $r_m = \sum W_m \log_2(1 + p_m G_m/\sigma^2)$.
+* **SINR**: $\phi_{l,m} = \frac{p_{l,m}|g_{l,m}|}{\sum p_{l,m}|g_{l,m}| + \sum p_{i,l}|h_{i,l}| + \sigma_m^2}$.
+* **Energy**: local energy $E^{lo} = \xi f_m^2 L_l$, offloading energy $E^{off} = p_m f_m/\varpi^{off}_m$, total $E^T = E^{off}+E^{lo}$.
+* **Power model**: $P_o(t) = p_c + \varepsilon \sum p_s + \sum s_{l,m}(t) p_{l,m}(t)$.
+* **Queues**: data queue $Q_{l,m}(t+1) = \max(Q_{l,m}(t) - b_{l,m}(t),0)+A_{l,m}(t)$, energy queue $H_{l,m}(t+1) = \max(H_{l,m}(t) - \tilde P_{l,m}(t) + P_T, 0)$.
+* **Task arrivals**: implement stochastic or trace-driven $A_{l,m}(t)$.
+
+**Design notes**:
+
+* Decide **units** (bits, Joules, Watts, seconds) and keep consistent.
+* Provide **reset()** to initialize channels, queues, energy states; **step(action)** to advance dynamics.
+
+---
+
+## 3) State, Action, Reward (SAR) per DDRL
+
+**Files to modify**: environment & agent interface
+
+* **State**: $S(t) = \{ h(t-1), U(t) \}$
+
+  * Implement **CSI latency** proxy $h(t-1)$ (e.g., last-slot measured CSI delay/age-of-information) and **task size** $U(t)$.
+  * Normalize/stack with other observables if needed (queues, energy levels) but ensure core pair exists.
+
+* **Action**: $a_t = (\mu_l(t), \rho_m(t), p_{l,m}(t))$
+
+  * **\u03bc\_l(t)**: number of IoT users assigned to RRH $l$ — likely **discrete**.
+  * **\u03c1\_m(t)**: subchannel index allocation — **discrete** (0..k-1), ensure **orthogonality** constraint.
+  * **p\_{l,m}(t)**: transmit power — **continuous** in $[0, p_{max}]$ or discretized grid.
+  * If your current DRL is pure DQN, choose **discretization** for $p$. If continuous is required, document switch to **DDPG/SAC** or parameterized DQN; DDRL paper uses **Dueling DQN**, so recommend **discrete power levels**.
+
+* **Reward**: primary objective **energy efficiency** $\eta^{EE} = \frac{\sum \omega_m r_{l,m}(t)}{\sum \mu_l P_o(t)}$.
+
+  * Implement as per-slot reward.
+  * Optionally include **Lyapunov drift-plus-penalty**: $r_t = \eta^{EE}(t) - V \cdot \text{drift}(L(\Phi(t)))$.
+
+---
+
+## 4) Lyapunov Optimization Hooks
+
+**Files to modify**: environment (queues), reward computation, config
+
+* **Lyapunov function**: $L(\Phi(t)) = \tfrac{1}{2}\big[\sum Q_{l,m}^2 + \sum H_{l,m}^2\big]$.
+* **Drift-plus-penalty term**: implement $\nabla L$ surrogate or standard one-step drift approximation.
+* **Stability constraint**: monitor $\lim_{t\to\infty} |Q_{l,m}(t)|/t \to 0$ via moving averages.
+* **V parameter** exposed in configs.
+
+---
+
+## 5) Constraints Enforcement
+
+**Files to modify**: environment step()
+
+Enforce or penalize the following each step:
+
+* **Power**: $\sum\sum s_{l,m}(t) p_{l,m}(t) \le p_{max}$. Project onto feasible set or add large penalty.
+* **QoS/Rate**: $\sum\sum s_{l,m}(t) r_{l,m}(t) \ge r_{min}$. Reward shaping or infeasible-action rejection.
+* **Interference**: $\sum\sum s_{l,m}(t) p_{l,m}(t) h_{i,l}(t) \le I_k$.
+* **Subchannel**: each subchannel at most one user (or per RRH); maintain matching matrix $s_{l,m}(t) \in \{0,1\}$.
+
+Implementation options:
+
+* **Hard constraints**: clip/project actions; resample illegal actions; mask in Q-learning.
+* **Soft constraints**: penalties in reward; action masking in the network output (preferred if your framework supports it).
+
+---
+
+## 6) Dueling DQN Network
+
+**Files to modify**: model/network definition
+
+* Implement dueling head:
+
+  * **Shared trunk** → **Value stream** $V(s)$ and **Advantage stream** $A(s,a)$.
+  * Combine as $Q(s,a) = V(s) + (A(s,a) - \frac{1}{|A|}\sum_a A(s,a))$.
+* **Architecture per paper**: FC with \[120, 80] hidden units; Adam optimizer.
+* Ensure **target network** and **experience replay** are present.
+
+---
+
+## 7) Training Loop & Hyperparameters
+
+**Files to modify**: training script & configs
+
+Set (or expose) the following defaults (paper vs. recommended):
+
+* **Learning rate**: `1e-3` (paper noted 0.01 baseline, 1e-3 optimal)
+* **Batch size**: `10` (paper optimal; default 120 baseline)
+* **Discount (beta)**: `0.7` (paper optimal; baseline 0.9)
+* **Replay memory size**: `400`
+* **Target update interval**: `train_interval=10` (and sync target `ω' ← ω`)
+* **Episodes**: `2000` different channel realizations
+* **Exploration**: ε-greedy with decay; ensure mixed action types handled
+
+---
+
+## 8) Replay Buffer & Sampling
+
+**Files to modify**: buffer impl
+
+* Store transitions `(s_t, a_t, r_t, s_{t+1}, done)`.
+* Optionally add **prioritized replay** if needed.
+* Ensure compatibility with **action masking** if implemented.
+
+---
+
+## 9) Metrics & Logging
+
+**Files to modify**: logger / training loop
+
+Track per-episode:
+
+* **Energy efficiency** (primary)
+* **Completion time** / delay
+* **Total reward** & loss
+* **Queue lengths** (mean/max)
+* **Constraint violations** count & magnitude
+* **Convergence curves** (Q-loss, reward)
+
+---
+
+## 10) Testing & Validation
+
+**Files to modify**: tests or add a `tests/` folder
+
+Create small deterministic tests:
+
+* **Queue update** matches equations for fixed inputs.
+* **Power/QoS constraints**: infeasible actions are corrected/penalized.
+* **Dueling combine** equals `V + (A - mean(A))` numerically.
+* **Replay buffer**: push/pop shapes and sampling.
+* **Reward calc** reproduces ηEE formula.
+
+---
+
+## 11) Migration Notes (from generic DRL to DDRL)
+
+* If current repo uses **vanilla DQN**: discretize transmit power and encode joint actions `(μ_l, ρ_m, p)` into a **flat action index** or use **factorized heads** with masking.
+* If it uses **policy gradients (DDPG/SAC)** but you want dueling: either
+
+  * keep DDPG for continuous power and use a **hybrid policy** for discrete parts, or
+  * switch to **discrete power grid** to stay with Dueling DQN per paper fidelity.
+* Add **Lyapunov drift** term into reward without destabilizing training (tune `V`).
+
+---
+
+## 12) After You Upload the Code
+
+I will:
+
+1. Fill in the **exact file paths** for each change.
+2. Provide **line-level diffs/patches** (or code blocks) for key functions.
+3. Adjust the **config** with paper-consistent defaults.
+4. Flag any architectural mismatches (e.g., continuous action handling) and propose minimal-change options.
+
+---
+
+### Placeholders for concrete diffs (to be filled):
+
+* `env.py`: add `queues`, `channel_model`, `reward_etaEE`, `lyapunov()`
+* `agent.py`: adapt `select_action()` with action masking and ε-greedy
+* `model.py`: implement `DuelingQNetwork`
+* `train.py`: set hparams, target sync, logging
+* `config.yaml`: add system parameters (devices=15, servers=2, bandwidth=40e6, noise=-100 dBm, Pmax=1.5 W, etc.)
+
+---
+
+**Next step:** Upload your repo (zip) or paste the project tree + key files (env, agent, model, train, config). I’ll populate all sections above with precise instructions and code diffs.
