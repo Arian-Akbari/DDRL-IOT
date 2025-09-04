@@ -183,7 +183,7 @@ class MEC:
         return obs
 
     def reset(self, arrive_task_size, arrive_task_dens):
-
+    
         self.drop_trans_count = 0
         self.drop_edge_count = 0
         self.drop_ue_count = 0
@@ -207,7 +207,7 @@ class MEC:
         self.edge_computation_queue = [
             [queue.Queue() for _ in range(self.n_edge)] for _ in range(self.n_ue)
         ]
-
+        
         self.t_ue_comp = -np.ones([self.n_ue])
         self.t_ue_tran = -np.ones([self.n_ue])
         self.b_edge_comp = np.zeros([self.n_ue, self.n_edge])
@@ -278,8 +278,8 @@ class MEC:
                     [
                         self.arrive_task_size[self.time_count, ue_index],
                         self.t_ue_comp[ue_index],
-                        self.t_ue_tran[ue_index],
-                        np.squeeze(self.b_edge_comp[ue_index, :]),
+                    self.t_ue_tran[ue_index],
+                    np.squeeze(self.b_edge_comp[ue_index, :]),
                         self.ue_energy_state[ue_index],
                     ]
                 )
@@ -287,7 +287,7 @@ class MEC:
         UEs_lstm_state = np.zeros([self.n_ue, self.n_lstm_state])
 
         return UEs_OBS, UEs_lstm_state
-
+   
     # perform action, observe state and delay (several steps later)
     def step(self, action_all):
         """
@@ -420,7 +420,7 @@ class MEC:
             reward = np.log(1 + raw_reward)
         elif raw_reward < 0:
             reward = -np.log(1 + abs(raw_reward))
-        else:
+                            else:
             reward = 0.0
 
         # 8) Build next observation
@@ -439,3 +439,4 @@ class MEC:
 
         # return in same signature as your current env (adapt if necessary)
         return obs, reward, done, info
+   

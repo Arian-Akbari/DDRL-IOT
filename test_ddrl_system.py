@@ -4,6 +4,7 @@ DDRL System Integration Test
 Tests the complete DDRL system to ensure it works correctly before deployment.
 """
 
+import logging
 import time
 
 import numpy as np
@@ -12,6 +13,37 @@ import action_utils
 from Config import Config
 from D3QN import DuelingDoubleDeepQNetwork
 from MEC_Env import MEC
+from system_utils import SystemOptimizer, TrainingLogger, setup_environment
+
+
+def test_system_optimization():
+    """Test system optimization and resource detection"""
+    print("=" * 60)
+    print("TESTING SYSTEM OPTIMIZATION")
+    print("=" * 60)
+
+    # Setup environment variables
+    setup_environment()
+
+    # Initialize system optimizer
+    optimizer = SystemOptimizer()
+    config = optimizer.optimize_system()
+
+    # Verify optimization results
+    assert config["gpu_count"] >= 0, "GPU count should be non-negative"
+    assert config["cpu_count"] > 0, "CPU count should be positive"
+    assert config["total_memory_gb"] > 0, "Total memory should be positive"
+    assert config["optimal_batch_size"] > 0, "Optimal batch size should be positive"
+    assert config["optimal_memory_size"] > 0, "Optimal memory size should be positive"
+
+    print(f"   ✓ System optimization completed:")
+    print(f"     GPUs: {config['gpu_count']}")
+    print(f"     CPU cores: {config['cpu_count']}")
+    print(f"     Total RAM: {config['total_memory_gb']:.1f} GB")
+    print(f"     Optimal batch size: {config['optimal_batch_size']}")
+    print(f"     Optimal memory size: {config['optimal_memory_size']}")
+
+    return config
 
 
 def test_basic_functionality():
@@ -268,6 +300,36 @@ def test_action_mask():
     print("\n✅ Action masking tests PASSED!\n")
 
 
+def test_logging_system():
+    """Test comprehensive logging system"""
+    print("=" * 60)
+    print("TESTING LOGGING SYSTEM")
+    print("=" * 60)
+
+    # Initialize logger
+    logger = TrainingLogger(log_dir="test_logs", log_level=logging.INFO)
+
+    # Test various logging functions
+    logger.training_logger.info("Testing training logger")
+    logger.system_logger.info("Testing system logger")
+    logger.performance_logger.info("Testing performance logger")
+
+    # Test episode logging
+    logger.log_episode_start(1, 100)
+    logger.log_episode_end(1, 25.5, 1000000, 2, -500000, 0.001)
+
+    # Test system status logging
+    logger.log_system_status()
+
+    # Test metrics saving
+    logger.save_metrics("test_metrics.npz")
+
+    print("   ✓ Logging system working correctly")
+    print("   ✓ Log files created in test_logs/ directory")
+
+    return logger
+
+
 def test_performance():
     """Test system performance for longer runs"""
     print("=" * 60)
@@ -364,37 +426,183 @@ def test_performance():
 
 
 def main():
-    """Run all tests"""
+    """Run all tests with comprehensive logging and system optimization"""
     print("\n🚀 DDRL SYSTEM INTEGRATION TEST")
     print("Testing system before server deployment...\n")
 
     try:
+        # System optimization and resource detection
+        system_config = test_system_optimization()
+
+        # Initialize comprehensive logging
+        logger = TrainingLogger(log_dir="test_logs", log_level=logging.INFO)
+        logger.training_logger.info("Starting DDRL system integration test")
+        logger.log_system_status()
+
         # Basic functionality
         env, agent = test_basic_functionality()
+        logger.training_logger.info("Basic functionality tests completed")
 
         # Environment step function
         test_environment_step()
+        logger.training_logger.info("Environment step tests completed")
 
         # Agent-environment interaction
         test_agent_interaction()
+        logger.training_logger.info("Agent interaction tests completed")
 
         # Action masking
         test_action_mask()
+        logger.training_logger.info("Action masking tests completed")
 
-        # Performance test
-        test_performance()
+        # Logging system test
+        test_logging_system()
+        logger.training_logger.info("Logging system tests completed")
+
+        # Performance test with optimized parameters
+        test_performance_optimized(system_config, logger)
+        logger.training_logger.info("Performance tests completed")
+
+        # Final system status
+        logger.log_system_status()
+        logger.save_metrics("integration_test_metrics.npz")
+
+        # Get training summary
+        summary = logger.get_summary()
+        logger.training_logger.info(f"Test Summary: {summary}")
 
         print("🎉 ALL TESTS PASSED! 🎉")
         print("✅ System is ready for server deployment!")
+        print(f"\n📊 System Resources Detected:")
+        print(f"   GPUs: {system_config['gpu_count']}")
+        print(f"   CPU cores: {system_config['cpu_count']}")
+        print(f"   Total RAM: {system_config['total_memory_gb']:.1f} GB")
+        print(f"   Optimal batch size: {system_config['optimal_batch_size']}")
+        print(f"   Optimal memory size: {system_config['optimal_memory_size']}")
         print("\nNext steps:")
         print("1. Copy this codebase to your server")
-        print("2. Run full training with your desired parameters")
-        print("3. Monitor the energy efficiency and Lyapunov drift metrics")
+        print("2. Run full training with optimized parameters")
+        print("3. Monitor logs in the 'logs/' directory")
+        print("4. Watch energy efficiency and Lyapunov drift metrics")
 
     except Exception as e:
         print(f"\n❌ TEST FAILED: {str(e)}")
         print("🔧 Fix the issue before deploying to server!")
         raise
+
+
+def test_performance_optimized(system_config, logger):
+    """Test system performance with optimized parameters"""
+    print("=" * 60)
+    print("TESTING OPTIMIZED SYSTEM PERFORMANCE")
+    print("=" * 60)
+
+    # Use optimized parameters from system detection
+    optimal_batch_size = min(system_config["optimal_batch_size"], 50)  # Cap for testing
+    optimal_memory_size = min(
+        system_config["optimal_memory_size"], 1000
+    )  # Cap for testing
+
+    print(f"Using optimized parameters:")
+    print(f"  Batch size: {optimal_batch_size}")
+    print(f"  Memory size: {optimal_memory_size}")
+
+    # Larger test scenario with optimized parameters
+    env = MEC(num_ue=10, num_edge=2, num_time=50, num_component=1, max_delay=5)
+    agent = DuelingDoubleDeepQNetwork(
+        n_actions=env.n_actions,
+        n_features=env.n_features,
+        n_lstm_features=env.n_lstm_state,
+        n_time=50,
+        learning_rate=Config.DDRL_LEARNING_RATE,
+        reward_decay=Config.DDRL_GAMMA,
+        memory_size=optimal_memory_size,
+        batch_size=optimal_batch_size,
+    )
+
+    # Create realistic task arrivals
+    arrive_task_size = np.zeros((50, 10))
+    arrive_task_dens = np.zeros((50, 10))
+
+    for t in range(50):
+        for ue in range(10):
+            if np.random.random() < Config.TASK_ARRIVE_PROB:  # Task arrives
+                arrive_task_size[t, ue] = np.random.uniform(
+                    Config.TASK_MIN_SIZE, Config.TASK_MAX_SIZE
+                )
+                arrive_task_dens[t, ue] = np.random.choice(Config.TASK_COMP_DENS)
+
+    print(f"1. Running {20} steps with {10} UEs using optimized parameters...")
+    start_time = time.time()
+
+    obs, lstm_state = env.reset(arrive_task_size, arrive_task_dens)
+    total_reward = 0
+    total_ee = 0
+    step_count = 0
+
+    for step in range(20):  # Test 20 steps
+        # Choose actions
+        actions = []
+        for ue in range(env.n_ue):
+            if np.sum(obs[ue]) > 0:
+                action = agent.choose_action(obs[ue])
+                actions.append(action)
+                agent.update_lstm(lstm_state[ue])
+            else:
+                actions.append(0)
+
+        # Environment step
+        obs_next, reward, done, info = env.step(actions)
+        total_reward += reward
+        total_ee += info["ee"]
+        step_count += 1
+
+        # Store and learn
+        for ue in range(env.n_ue):
+            if np.sum(obs[ue]) > 0:
+                agent.store_transition(
+                    obs[ue],
+                    lstm_state[ue],
+                    actions[ue],
+                    reward,
+                    obs_next[ue],
+                    lstm_state[ue],
+                )
+
+        if agent.memory_counter > agent.batch_size:
+            agent.learn()
+
+        # Log progress
+        if step % 5 == 0:
+            print(
+                f"   Step {step:2d}: reward={reward:6.3f}, EE={info['ee']:6.3f}, conflicts={len(info['conflicts'])}"
+            )
+            logger.log_step(
+                step, reward, info["ee"], len(info["conflicts"]), info.get("raw_reward")
+            )
+
+        obs = obs_next
+        lstm_state = np.zeros((env.n_ue, env.n_lstm_state))
+
+        if done:
+            break
+
+    elapsed_time = time.time() - start_time
+    avg_reward = total_reward / step_count
+    avg_ee = total_ee / step_count
+
+    print(f"\n   ✓ Optimized performance test completed:")
+    print(f"     Time: {elapsed_time:.2f}s ({elapsed_time/step_count:.3f}s per step)")
+    print(f"     Average reward: {avg_reward:.4f}")
+    print(f"     Average energy efficiency: {avg_ee:.4f}")
+    print(f"     Memory utilization: {agent.memory_counter}/{agent.memory_size}")
+
+    # Log performance metrics
+    logger.performance_logger.info(
+        f"Optimized test - Avg reward: {avg_reward:.4f}, Avg EE: {avg_ee:.4f}"
+    )
+
+    print("\n✅ Optimized performance tests PASSED!\n")
 
 
 if __name__ == "__main__":
