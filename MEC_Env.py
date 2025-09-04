@@ -164,22 +164,23 @@ class MEC:
         self.g = np.random.exponential(scale=1.0, size=(self.n_ue, self.n_edge, self.k))
 
     def _make_obs(self):
-        # For minimal change: pack per-UE vector: [task_size, data_queue, energy_queue, avg_channel_gain_to_edges...]
-        # If your existing state shape is different, append these fields.
-        obs = []
-        # compute per-UE average channel to each edge (reduce subchannels)
-        avg_g = np.mean(self.g, axis=2)  # shape n_ue x n_edge
-        for u in range(self.n_ue):
-            # example task_size placeholder - adapt if you have arrivals stored elsewhere
-            task_size = getattr(self, "current_task_size", np.zeros(self.n_ue))[
-                u
-            ]  # keep safe
-            # flatten avg_g[u,:] to include edge info
-            vec = [task_size, self.data_queue[u], self.energy_queue[u]]
-            vec.extend(avg_g[u, :].tolist())
-            obs.append(vec)
-        # return as np.array (n_ue, features)
-        return np.array(obs, dtype=np.float32)
+        # Match original observation format: [task_size, t_ue_comp, t_ue_tran, b_edge_comp[...], ue_energy_state]
+        obs = np.zeros([self.n_ue, self.n_features])
+        for ue_index in range(self.n_ue):
+            if (
+                self.time_count < self.n_time
+                and self.arrive_task_size[self.time_count, ue_index] != 0
+            ):
+                obs[ue_index, :] = np.hstack(
+                    [
+                        self.arrive_task_size[self.time_count, ue_index],
+                        self.t_ue_comp[ue_index] - self.time_count + 1,
+                        self.t_ue_tran[ue_index] - self.time_count + 1,
+                        self.b_edge_comp[ue_index, :],
+                        self.ue_energy_state[ue_index],
+                    ]
+                )
+        return obs
 
     def reset(self, arrive_task_size, arrive_task_dens):
 
@@ -412,7 +413,15 @@ class MEC:
         L_curr = 0.5 * (np.sum(self.data_queue**2) + np.sum(self.energy_queue**2))
         drift = L_curr - L_prev
 
-        reward = ee - Config.LYAPUNOV_V * drift
+        # Normalize reward to prevent extremely large values that can destabilize training
+        raw_reward = ee - Config.LYAPUNOV_V * drift
+        # Apply log scaling to keep reward in reasonable range
+        if raw_reward > 0:
+            reward = np.log(1 + raw_reward)
+        elif raw_reward < 0:
+            reward = -np.log(1 + abs(raw_reward))
+        else:
+            reward = 0.0
 
         # 8) Build next observation
         obs = self._make_obs()
@@ -425,6 +434,7 @@ class MEC:
             "conflicts": list(conflicted),
             "slot_bits": slot_bits,
             "slot_power": slot_power,
+            "raw_reward": raw_reward,
         }
 
         # return in same signature as your current env (adapt if necessary)

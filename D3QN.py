@@ -311,27 +311,35 @@ class DuelingDoubleDeepQNetwork:
 
     def learn(self):
 
+        # Check if we have enough memory to learn
+        available_memory = min(self.memory_counter, self.memory_size) - self.n_lstm_step
+        if available_memory <= 0:
+            return 0.0  # Not enough memory to learn
+
+        # Use smaller batch size if not enough memory
+        actual_batch_size = min(self.batch_size, available_memory)
+
         # check if replace target_net parameters
         if self.learn_step_counter % self.replace_target_iter == 0:
             # run the self.replace_target_op in __int__
             self.sess.run(self.replace_target_op)
             print("Network_parameter_updated\n")
 
-        # randomly pick [batch_size] memory from memory np.hstack((s, [a, r], s_, lstm_s, lstm_s_))
+        # randomly pick [actual_batch_size] memory from memory np.hstack((s, [a, r], s_, lstm_s, lstm_s_))
         if self.memory_counter > self.memory_size:
             sample_index = np.random.choice(
-                self.memory_size - self.n_lstm_step, size=self.batch_size
+                self.memory_size - self.n_lstm_step, size=actual_batch_size
             )
         else:
             sample_index = np.random.choice(
-                self.memory_counter - self.n_lstm_step, size=self.batch_size
+                self.memory_counter - self.n_lstm_step, size=actual_batch_size
             )
         #  transition = np.hstack(s, [a, r], s_, lstm_s, lstm_s_)
         batch_memory = self.memory[
             sample_index, : self.n_features + 1 + 1 + self.n_features
         ]
         lstm_batch_memory = np.zeros(
-            [self.batch_size, self.n_lstm_step, self.n_lstm_state * 2]
+            [actual_batch_size, self.n_lstm_step, self.n_lstm_state * 2]
         )
         for ii in range(len(sample_index)):
             for jj in range(self.n_lstm_step):
@@ -366,7 +374,7 @@ class DuelingDoubleDeepQNetwork:
             },
         )
         q_target = q_eval.copy()
-        batch_index = np.arange(self.batch_size, dtype=np.int32)
+        batch_index = np.arange(actual_batch_size, dtype=np.int32)
         eval_act_index = batch_memory[:, self.n_features].astype(
             int
         )  # action with a single value (int action)
