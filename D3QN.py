@@ -28,13 +28,13 @@ class DuelingDoubleDeepQNetwork:
         e_greedy=0.99,
         replace_target_iter=200,
         memory_size=500,
-        batch_size=32,
+        batch_size=64,  # Increased from 32
         e_greedy_increment=0.00025,
         n_lstm_step=10,
         dueling=True,
         double_q=True,
-        N_L1=20,
-        N_lstm=20,
+        N_L1=64,  # Increased from 20
+        N_lstm=64,  # Increased from 20
     ):
 
         self.n_actions = n_actions
@@ -87,7 +87,14 @@ class DuelingDoubleDeepQNetwork:
             tf.assign(t, e) for t, e in zip(t_params, e_params)
         ]  # update the parameters in target_net
 
-        self.sess = tf.Session()
+        # Optimized session configuration
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        config.allow_soft_placement = True
+        config.inter_op_parallelism_threads = 0  # Use all available cores
+        config.intra_op_parallelism_threads = 0  # Use all available cores
+
+        self.sess = tf.Session(config=config)
 
         self.sess.run(tf.global_variables_initializer())
         self.reward_store = list()

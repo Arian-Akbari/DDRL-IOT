@@ -36,8 +36,11 @@ class Config(object):
     N_TIME = N_TIME_SLOT + MAX_DELAY
 
     # Algorithm settings - Optimized for your server specs
-    LEARNING_RATE = 0.001  # Reduced for stability with larger networks
-    REWARD_DECAY = 0.95  # Better long-term planning
+    LEARNING_RATE = 0.001
+    REWARD_DECAY = 0.95
     E_GREEDY = 0.99
-    N_NETWORK_UPDATE = 100  # More frequent updates
-    MEMORY_SIZE = 20000  # Increased to use 62GB RAM (was 500)
+    N_NETWORK_UPDATE = 100
+    MEMORY_SIZE = 50000  # Changed from 20000 - uses more RAM
+    BATCH_SIZE = 64  # Add this new line
+    N_L1 = 64  # Add this new line
+    N_LSTM = 64  # Add this new line

@@ -1,3 +1,4 @@
+import datetime  # Add this import
 import os
 import random
 import shutil
@@ -9,8 +10,34 @@ from Config import Config
 from D3QN import DuelingDoubleDeepQNetwork
 from MEC_Env import MEC
 
-if not os.path.exists("models"):
-    os.mkdir("models")
+
+# Create unique results directory
+def create_unique_result_dir():
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_dir = f"results_{timestamp}"
+
+    # Create main results directory
+    os.makedirs(base_dir, exist_ok=True)
+
+    # Create subdirectories
+    models_dir = os.path.join(base_dir, "models")
+    charts_dir = os.path.join(base_dir, "charts")
+    logs_dir = os.path.join(base_dir, "logs")
+
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(charts_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
+
+    return base_dir, models_dir, charts_dir, logs_dir
+
+
+# Initialize unique directories
+RESULT_DIR, MODELS_DIR, CHARTS_DIR, LOGS_DIR = create_unique_result_dir()
+print(f"📁 Results will be saved to: {RESULT_DIR}")
+
+# Remove the old models check
+# if not os.path.exists("models"):
+#     os.mkdir("models")
 
 
 def normalize(parameter, minimum, maximum):
@@ -352,25 +379,26 @@ def train(ue_RL_list, NUM_EPISODE):
             lstm_state_all = lstm_state_all_
 
             # CONTROL LEARNING START TIME AND FREQUENCY - Optimized for larger batch size
-            if (RL_step > 100) and (
-                RL_step % 5 == 0
-            ):  # More frequent learning with larger batches
+            if (RL_step > 50) and (
+                RL_step % 3 == 0
+            ):  # Learn earlier and more frequently
                 for ue in range(env.n_ue):
                     ue_RL_list[ue].learn()
 
             # GAME ENDS
 
             if done:
-                with open("Delay.txt", "a") as f:
+                # Save metrics to unique directory
+                with open(os.path.join(LOGS_DIR, "Delay.txt"), "a") as f:
                     f.write("\n" + str(Cal_Delay(ue_RL_list, episode)))
 
-                with open("Energy.txt", "a") as f:
+                with open(os.path.join(LOGS_DIR, "Energy.txt"), "a") as f:
                     f.write("\n" + str(Cal_Energy(ue_RL_list, episode)))
 
-                with open("QoE.txt", "a") as f:
+                with open(os.path.join(LOGS_DIR, "QoE.txt"), "a") as f:
                     f.write("\n" + str(Cal_QoE(ue_RL_list, episode)))
 
-                with open("Drop.txt", "a") as f:
+                with open(os.path.join(LOGS_DIR, "Drop.txt"), "a") as f:
                     f.write("\n" + str(Drop_Count(ue_RL_list, episode)))
 
                 """
@@ -406,34 +434,34 @@ def train(ue_RL_list, NUM_EPISODE):
                 """
 
                 if episode % 200 == 0 and episode != 0:
-                    os.mkdir("models" + "/" + str(episode))
+                    episode_model_dir = os.path.join(MODELS_DIR, str(episode))
+                    os.makedirs(episode_model_dir, exist_ok=True)
                     for ue in range(env.n_ue):
+                        model_path = os.path.join(
+                            episode_model_dir, f"{ue}_X_model", "model.ckpt"
+                        )
+                        os.makedirs(os.path.dirname(model_path), exist_ok=True)
                         ue_RL_list[ue].saver.save(
                             ue_RL_list[ue].sess,
-                            "models/"
-                            + str(episode)
-                            + "/"
-                            + str(ue)
-                            + "_X_model"
-                            + "/model.ckpt",
+                            model_path,
                             global_step=episode,
                         )
-                        print("UE", ue, "Network_model_seved\n")
+                        print("UE", ue, "Network_model_saved\n")
 
                 if episode % 999 == 0 and episode != 0:
-                    os.mkdir("models" + "/" + str(episode))
+                    episode_model_dir = os.path.join(MODELS_DIR, str(episode))
+                    os.makedirs(episode_model_dir, exist_ok=True)
                     for ue in range(env.n_ue):
+                        model_path = os.path.join(
+                            episode_model_dir, f"{ue}_X_model", "model.ckpt"
+                        )
+                        os.makedirs(os.path.dirname(model_path), exist_ok=True)
                         ue_RL_list[ue].saver.save(
                             ue_RL_list[ue].sess,
-                            "models/"
-                            + str(episode)
-                            + "/"
-                            + str(ue)
-                            + "_X_model"
-                            + "/model.ckpt",
+                            model_path,
                             global_step=episode,
                         )
-                        print("UE", ue, "Network_model_seved\n")
+                        print("UE", ue, "Network_model_saved\n")
 
                 # Process energy
                 ue_bit_processed = sum(sum(env.ue_bit_processed))
@@ -534,7 +562,9 @@ def train(ue_RL_list, NUM_EPISODE):
                     # Save the figure to a file
                     plt.tight_layout()
                     plt.subplots_adjust(top=0.9)
-                    plt.savefig("Performance_Chart.png", dpi=100)
+                    chart_filename = f"Performance_Chart_Episode_{episode}.png"
+                    plt.savefig(os.path.join(CHARTS_DIR, chart_filename), dpi=100)
+                    print(f"📊 Chart saved: {chart_filename}")
                     # plt.show()
 
                 print(
@@ -585,6 +615,15 @@ def train(ue_RL_list, NUM_EPISODE):
 
                 break  # Training Finished
 
+    # At the end of train() function, after the last break
+    print("\n" + "=" * 80)
+    print("🎯 TRAINING COMPLETED!")
+    print(f"📁 All results saved to: {RESULT_DIR}")
+    print(f"📊 Charts saved to: {CHARTS_DIR}")
+    print(f"🤖 Models saved to: {MODELS_DIR}")
+    print(f"📝 Logs saved to: {LOGS_DIR}")
+    print("=" * 80)
+
 
 if __name__ == "__main__":
 
@@ -607,6 +646,9 @@ if __name__ == "__main__":
                 e_greedy=Config.E_GREEDY,
                 replace_target_iter=Config.N_NETWORK_UPDATE,
                 memory_size=Config.MEMORY_SIZE,
+                batch_size=Config.BATCH_SIZE,  # Add this line
+                N_L1=Config.N_L1,  # Add this line
+                N_lstm=Config.N_LSTM,  # Add this line
             )
         )
 
@@ -617,10 +659,19 @@ if __name__ == "__main__":
         ue_RL_list[ue].epsilon = 1
     """
 
-    Delay = open("Delay.txt", "w")
-    Energy = open("Energy.txt", "w")
-    QoE = open("QoE.txt", "w")
-    Drop = open("Drop.txt", "w")
+    # Initialize log files in unique directory
+    Delay = open(os.path.join(LOGS_DIR, "Delay.txt"), "w")
+    Energy = open(os.path.join(LOGS_DIR, "Energy.txt"), "w")
+    QoE = open(os.path.join(LOGS_DIR, "QoE.txt"), "w")
+    Drop = open(os.path.join(LOGS_DIR, "Drop.txt"), "w")
+
+    # Close files before training starts
+    Delay.close()
+    Energy.close()
+    QoE.close()
+    Drop.close()
+
+    print(f"📝 Log files initialized in: {LOGS_DIR}")
 
     # TRAIN THE SYSTEM
     train(ue_RL_list, Config.N_EPISODE)
